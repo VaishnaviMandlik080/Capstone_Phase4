@@ -7,7 +7,10 @@ from app.models import (
     DeviceResponse,
     DeviceStatus,
 )
-from app.repositories.device_repository import InMemoryDeviceRepository
+from app.repositories.device_repository import (
+    DeviceRepository,
+    InMemoryDeviceRepository,
+)
 
 
 class DeviceAlreadyExistsError(Exception):
@@ -19,7 +22,7 @@ class DeviceNotFoundError(Exception):
 
 
 class DeviceService:
-    def __init__(self, repository: InMemoryDeviceRepository) -> None:
+    def __init__(self, repository: DeviceRepository) -> None:
         self.repository = repository
 
     def register(self, device: DeviceCreate) -> DeviceResponse:
@@ -34,14 +37,14 @@ class DeviceService:
     def list(self) -> list[DeviceResponse]:
         return self.repository.list_devices()
 
-    def get(self, device_id: int) -> DeviceResponse:
+    def get(self, device_id: str) -> DeviceResponse:
         device = self.repository.get_device(device_id)
         if device is None:
             raise DeviceNotFoundError(f"Device {device_id} not found")
         return device
 
     def update_status(
-        self, device_id: int, status: DeviceStatus
+        self, device_id: str, status: DeviceStatus
     ) -> DeviceResponse:
         device = self.get(device_id)
         updated_device = self.repository.update_status(device_id, status)
