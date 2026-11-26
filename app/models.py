@@ -2,7 +2,7 @@ import ipaddress
 from datetime import datetime, timezone
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 DeviceType = Literal["router", "switch", "server"]
@@ -10,11 +10,15 @@ DeviceStatus = Literal["online", "offline"]
 
 
 class DeviceFields(BaseModel):
-    device_id: int = Field(gt=0)
-    name: str = Field(min_length=1)
-    device_type: DeviceType
-    ip_address: str
-    status: DeviceStatus = "online"
+    device_id: str = Field(
+        min_length=1,
+        examples=["RTR-101"],
+        description="Unique device identifier, for example RTR-101.",
+    )
+    name: str = Field(min_length=1, examples=["Branch Router"])
+    device_type: DeviceType = Field(examples=["router"])
+    ip_address: str = Field(examples=["192.168.10.1"])
+    status: DeviceStatus = Field(default="online", examples=["online"])
 
     @field_validator("ip_address")
     @classmethod
@@ -29,7 +33,19 @@ class DeviceFields(BaseModel):
 
 
 class DeviceCreate(DeviceFields):
-    pass
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "device_id": "RTR-101",
+                    "name": "Branch Router",
+                    "device_type": "router",
+                    "ip_address": "192.168.10.1",
+                    "status": "online",
+                }
+            ]
+        }
+    )
 
 
 class DeviceResponse(DeviceFields):
@@ -37,11 +53,15 @@ class DeviceResponse(DeviceFields):
 
 
 class StatusUpdate(BaseModel):
-    status: DeviceStatus
+    model_config = ConfigDict(
+        json_schema_extra={"examples": [{"status": "offline"}]}
+    )
+
+    status: DeviceStatus = Field(examples=["offline"])
 
 
 class AlertResponse(BaseModel):
-    device_id: int
+    device_id: str
     message: str
     timestamp: datetime
 
