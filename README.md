@@ -34,3 +34,29 @@ Run the automated tests with:
 ```bash
 pytest
 ```
+
+## Verify the offline alert in Swagger
+
+Open `/docs` and run these requests in order:
+
+1. Register an online device with `POST /devices`:
+
+   ```json
+   {
+     "device_id": 1,
+     "name": "edge-router",
+     "device_type": "router",
+     "ip_address": "192.168.1.1"
+   }
+   ```
+
+2. Run `PATCH /devices/1/status` twice with this body:
+
+   ```json
+   {
+     "status": "offline"
+   }
+   ```
+
+3. Run `GET /alerts`. It should return one alert for device 1. Repeating the
+   offline update does not create another alert.
