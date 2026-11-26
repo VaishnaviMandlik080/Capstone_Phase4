@@ -1,29 +1,37 @@
-from app.models import Device, DeviceCreate
+from app.models import AlertResponse, DeviceResponse, DeviceStatus
 
 
 class InMemoryDeviceRepository:
     def __init__(self) -> None:
-        self._devices: dict[int, Device] = {}
-        self._next_id = 1
+        self._devices: dict[int, DeviceResponse] = {}
+        self._alerts: list[AlertResponse] = []
 
-    def create(self, device_data: DeviceCreate) -> Device:
-        device = Device(
-            id=self._next_id,
-            name=device_data.name,
-            device_type=device_data.device_type,
-        )
-        self._devices[device.id] = device
-        self._next_id += 1
-        return device
+    def add_device(self, device: DeviceResponse) -> DeviceResponse:
+        stored_device = device.model_copy(deep=True)
+        self._devices[device.device_id] = stored_device
+        return stored_device.model_copy(deep=True)
 
-    def list_all(self) -> list[Device]:
-        return list(self._devices.values())
+    def list_devices(self) -> list[DeviceResponse]:
+        return [device.model_copy(deep=True) for device in self._devices.values()]
 
-    def get(self, device_id: int) -> Device | None:
-        return self._devices.get(device_id)
+    def get_device(self, device_id: int) -> DeviceResponse | None:
+        device = self._devices.get(device_id)
+        return device.model_copy(deep=True) if device is not None else None
 
-    def save(self, device: Device) -> None:
-        self._devices[device.id] = device
+    def update_status(
+        self, device_id: int, status: DeviceStatus
+    ) -> DeviceResponse | None:
+        device = self._devices.get(device_id)
+        if device is None:
+            return None
+        updated_device = device.model_copy(update={"status": status}, deep=True)
+        self._devices[device_id] = updated_device
+        return updated_device.model_copy(deep=True)
 
+    def save_alert(self, alert: AlertResponse) -> AlertResponse:
+        stored_alert = alert.model_copy(deep=True)
+        self._alerts.append(stored_alert)
+        return stored_alert.model_copy(deep=True)
 
-device_repository = InMemoryDeviceRepository()
+    def list_alerts(self) -> list[AlertResponse]:
+        return [alert.model_copy(deep=True) for alert in self._alerts]
