@@ -20,17 +20,16 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
 
 def device_payload(**overrides: object) -> dict[str, object]:
     return {
-        "device_id": 1,
-        "name": "edge-router",
+        "device_id": "RTR-101",
+        "name": "Branch Router",
         "device_type": "router",
-        "ip_address": "192.168.1.1",
+        "ip_address": "192.168.10.1",
         **overrides,
     }
 
 
 def test_health_and_all_six_endpoints(client: TestClient) -> None:
     assert client.get("/health").json() == {"status": "ok"}
-
     endpoints = {
         (method.upper(), path)
         for path, operations in app.openapi()["paths"].items()
@@ -46,19 +45,31 @@ def test_health_and_all_six_endpoints(client: TestClient) -> None:
     } <= endpoints
 
 
+def test_openapi_documents_examples_and_error_responses(
+    client: TestClient,
+) -> None:
+    schema = client.get("/openapi.json").json()
+    paths = schema["paths"]
+    assert paths["/devices"]["post"]["responses"]["201"]
+    assert paths["/devices"]["post"]["responses"]["409"]["description"]
+    assert paths["/devices/{device_id}"]["get"]["responses"]["404"]["description"]
+    assert paths["/devices/{device_id}/status"]["patch"]["responses"]["404"]["description"]
+    assert schema["components"]["schemas"]["DeviceCreate"]["examples"][0]["device_id"] == "RTR-101"
+    assert schema["components"]["schemas"]["StatusUpdate"]["examples"][0]["status"] == "offline"
+
+
 def test_register_list_and_get_device(client: TestClient) -> None:
     response = client.post("/devices", json=device_payload())
-
     assert response.status_code == 201
     assert response.json() == {
-        "device_id": 1,
-        "name": "edge-router",
+        "device_id": "RTR-101",
+        "name": "Branch Router",
         "device_type": "router",
-        "ip_address": "192.168.1.1",
+        "ip_address": "192.168.10.1",
         "status": "online",
     }
     assert client.get("/devices").json() == [response.json()]
-    assert client.get("/devices/1").json() == response.json()
+    assert client.get("/devices/RTR-101").json() == response.json()
 
 
 @pytest.mark.parametrize(
@@ -68,7 +79,7 @@ def test_register_list_and_get_device(client: TestClient) -> None:
         {"status": "unknown"},
         {"ip_address": "not-an-ip"},
         {"ip_address": "2001:db8::1"},
-        {"device_id": 0},
+        {"device_id": ""},
     ],
 )
 def test_invalid_device_data_returns_422(
@@ -79,56 +90,53 @@ def test_invalid_device_data_returns_422(
 
 def test_duplicate_device_id_returns_409(client: TestClient) -> None:
     assert client.post("/devices", json=device_payload()).status_code == 201
-    assert (
-        client.post("/devices", json=device_payload(name="duplicate")).status_code
-        == 409
-    )
+    assert client.post("/devices", json=device_payload(name="duplicate")).status_code == 409
 
 
-def test_missing_device_returns_404_for_get_and_status_update(
-    client: TestClient,
-) -> None:
-    assert client.get("/devices/99").status_code == 404
-    assert (
-        client.patch("/devices/99/status", json={"status": "offline"}).status_code
-        == 404
-    )
+def test_missing_device_returns_404_for_get_and_status_update(client: TestClient) -> None:
+    assert client.get("/devices/RTR-404").status_code == 404
+    assert client.patch("/devices/RTR-404/status", json={"status": "offline"}).status_code == 404
 
 
-def test_only_first_online_to_offline_transition_creates_alert(
-    client: TestClient,
-) -> None:
+def test_only_first_online_to_offline_transition_creates_alert(client: TestClient) -> None:
     client.post("/devices", json=device_payload())
-    first_update = client.patch(
-        "/devices/1/status", json={"status": "offline"}
-    )
-    repeated_update = client.patch(
-        "/devices/1/status", json={"status": "offline"}
-    )
-
-    assert first_update.status_code == repeated_update.status_code == 200
+    first = client.patch("/devices/RTR-101/status", json={"status": "offline"})
+    repeated = client.patch("/devices/RTR-101/status", json={"status": "offline"})
+    assert first.status_code == repeated.status_code == 200
     alerts = client.get("/alerts").json()
     assert len(alerts) == 1
-    assert alerts[0]["device_id"] == 1
-    assert alerts[0]["message"] == "Device 1 changed from online to offline"
-    timestamp = datetime.fromisoformat(alerts[0]["timestamp"])
-    assert timestamp.utcoffset().total_seconds() == 0
+    assert alerts[0]["device_id"] == "RTR-101"
+    assert alerts[0]["message"] == "Device RTR-101 changed from online to offline"
+    assert datetime.fromisoformat(alerts[0]["timestamp"]).utcoffset().total_seconds() == 0
 
 
-def test_initial_offline_registration_does_not_create_alert(
-    client: TestClient,
-) -> None:
-    payload = device_payload(status="offline")
-    assert client.post("/devices", json=payload).status_code == 201
+def test_swagger_walkthrough_inputs(client: TestClient) -> None:
+    registration = client.post("/devices", json={
+        "device_id": "RTR-101", "name": "Branch Router", "device_type": "router",
+        "ip_address": "192.168.10.1", "status": "online",
+    })
+    assert registration.status_code == 201
+    first = client.patch("/devices/RTR-101/status", json={"status": "offline"})
+    assert first.status_code == 200
+    assert first.json()["status"] == "offline"
+    assert client.patch("/devices/RTR-101/status", json={"status": "offline"}).status_code == 200
+    alerts = client.get("/alerts").json()
+    assert len(alerts) == 1 and alerts[0]["device_id"] == "RTR-101"
+    duplicate = client.post("/devices", json={
+        "device_id": "RTR-101", "name": "Branch Router", "device_type": "router",
+        "ip_address": "192.168.10.1", "status": "online",
+    })
+    assert duplicate.status_code == 409
+
+
+def test_initial_offline_registration_does_not_create_alert(client: TestClient) -> None:
+    assert client.post("/devices", json=device_payload(status="offline")).status_code == 201
     assert client.get("/alerts").json() == []
 
 
-def test_offline_transition_after_recovery_creates_a_new_alert(
-    client: TestClient,
-) -> None:
+def test_offline_transition_after_recovery_creates_a_new_alert(client: TestClient) -> None:
     client.post("/devices", json=device_payload())
-    client.patch("/devices/1/status", json={"status": "offline"})
-    client.patch("/devices/1/status", json={"status": "online"})
-    client.patch("/devices/1/status", json={"status": "offline"})
-
+    client.patch("/devices/RTR-101/status", json={"status": "offline"})
+    client.patch("/devices/RTR-101/status", json={"status": "online"})
+    client.patch("/devices/RTR-101/status", json={"status": "offline"})
     assert len(client.get("/alerts").json()) == 2
