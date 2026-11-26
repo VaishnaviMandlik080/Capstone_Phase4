@@ -14,6 +14,11 @@ router = APIRouter()
     "",
     response_model=DeviceResponse,
     status_code=status.HTTP_201_CREATED,
+    responses={
+        status.HTTP_409_CONFLICT: {
+            "description": "A device with this device_id already exists."
+        }
+    },
 )
 def register_device(device: DeviceCreate) -> DeviceResponse:
     try:
@@ -29,8 +34,14 @@ def get_devices() -> list[DeviceResponse]:
     return device_service.list()
 
 
-@router.get("/{device_id}", response_model=DeviceResponse)
-def get_device_by_id(device_id: int) -> DeviceResponse:
+@router.get(
+    "/{device_id}",
+    response_model=DeviceResponse,
+    responses={
+        status.HTTP_404_NOT_FOUND: {"description": "Device was not found."}
+    },
+)
+def get_device_by_id(device_id: str) -> DeviceResponse:
     try:
         return device_service.get(device_id)
     except DeviceNotFoundError as error:
@@ -39,9 +50,15 @@ def get_device_by_id(device_id: int) -> DeviceResponse:
         ) from error
 
 
-@router.patch("/{device_id}/status", response_model=DeviceResponse)
+@router.patch(
+    "/{device_id}/status",
+    response_model=DeviceResponse,
+    responses={
+        status.HTTP_404_NOT_FOUND: {"description": "Device was not found."}
+    },
+)
 def change_device_status(
-    device_id: int, update: StatusUpdate
+    device_id: str, update: StatusUpdate
 ) -> DeviceResponse:
     try:
         return device_service.update_status(device_id, update.status)
